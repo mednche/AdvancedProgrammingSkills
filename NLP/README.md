@@ -5,7 +5,7 @@
 </p>
 
 This script:
-- Extracts the raw text from the poem 'The Waste Land'by T. S. Eliot from an html format
+- Extracts the raw text from the poem {'The Waste Land'by T. S. Eliot}[http://www.gutenberg.org/ebooks/1321?msg=welcome_stranger] from an html format
 - Performs Part of Speech tagging to extract proper nouns
 - Querries the names in google maps to get the corresponding lat/lon (providing the proper noun corresponds to a place name)
 - Displays the location of the places in the poem on an interractive world map using Bokeh
