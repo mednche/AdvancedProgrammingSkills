@@ -1,0 +1,346 @@
+
+# Mapping places mentionned in a poem - an application of Natural Language Processing
+
+
+Created on Wed Mar 14 15:00:15 2018
+
+@author: Natacha Chenevoy
+
+This script:
+- Extracts the raw text from The Waste Land by T. S. Eliot from an html format
+- Performs Part of Speech tagging to extract proper nouns
+- Querries the names in google maps to get the corresponding lat/lon 
+(providing the proper noun corresponds to a place name)
+- Displays the places on an interractive map using Bokeh
+
+
+### Extracts the raw text from The Waste Land by T. S. Eliot from an html format 
+
+
+
+```python
+import requests
+import nltk
+from bs4 import BeautifulSoup
+nltk.download("punkt")
+
+# Read HTML page
+url = "http://www.gutenberg.org/files/1321/1321-h/1321-h.htm"
+html = requests.get(url).text
+raw = BeautifulSoup(html, "lxml").get_text()	# Without tags
+
+# Cut down text
+start = "il miglior fabbro"
+start_pos = raw.find(start) + len(start) 
+end_pos = raw.rfind("Line 415 aetherial] aethereal")
+raw = raw[start_pos:end_pos]
+
+# Tokenising
+tokens = nltk.word_tokenize(raw)
+
+
+text = nltk.Text(tokens)
+len(text) #Number of words
+
+# 20 most common words
+fdist = nltk.FreqDist(text)
+print(fdist.most_common(20))
+fdist.plot(50, cumulative=True)
+
+
+# 20 most common word length
+fdist =  nltk.FreqDist(len(w) for w in text)
+print(fdist.most_common(20))
+
+
+# All unique words over 10 letters long 
+sorted_words = sorted(set(text))   #Duplicates collapsed by set.
+long_words = [w for w in sorted_words if len(w) > 10]
+print(long_words)
+
+```
+
+### Perform Part of Speech tagging to extract proper nouns
+
+
+```python
+# Part of Speech tagging
+nltk.download('averaged_perceptron_tagger')                
+tagged = nltk.pos_tag(text)                    
+
+# Extract Proper Noun and remove false positive tags (numbers and uppercase words)
+proper_nouns = []
+for tag in tagged:
+    if tag[1] == "NNP" and tag[0].isalpha() and not tag[0].isupper():
+        proper_nouns.append(tag[0])
+```
+
+### Querry google maps for lat/lon of places in poem
+
+
+```python
+import time
+
+# Replace the value below with your personal API key:
+mykey = ""
+
+GOOGLE_MAPS_API_URL = 'https://maps.googleapis.com/maps/api/geocode/json'
+
+import pandas as pd
+df = pd.DataFrame()
+
+for noun in proper_nouns:
+    
+    params = {
+        'address': noun,
+        'key' : mykey
+    }
+    
+    # Do the request and get the response data
+    req = requests.get(GOOGLE_MAPS_API_URL, params=params)
+    res = req.json()
+    
+    if res['results']:
+        
+        # Use the first result
+        result = res['results'][0]
+    
+        geodata = dict()
+        geodata['lat'] = result['geometry']['location']['lat']
+        geodata['lng'] = result['geometry']['location']['lng']
+        geodata['address'] = result['formatted_address']
+        geodata['name'] = noun
+    
+        print('{address}. (lat, lng) = ({lat}, {lng})'.format(**geodata))
+        # 221B Baker Street, London, Greater London NW1 6XE, UK. (lat, lng) = (51.5237038, -0.1585531)
+        df = df.append(geodata, ignore_index = True)
+        # Wait for 5 seconds
+        time.sleep(5)
+
+df.to_csv("places.csv")
+```
+
+### Create interractive map with Bokeh
+
+
+```python
+# Need to install pyproj (using conda or pip)
+
+
+from pyproj import Proj, transform #  for projection from lat/long to mercator
+from bokeh.io import output_notebook, show
+from bokeh.plotting import figure
+from bokeh.tile_providers import CARTODBPOSITRON
+from bokeh.models import (
+  GMapPlot, GMapOptions, ColumnDataSource, Circle, Range1d, PanTool, WheelZoomTool, BoxSelectTool, HoverTool
+)
+
+import os
+import pandas as pd
+
+# os.chdir("//ds.leeds.ac.uk/staff/staff19/mednche/GitHub/AdvancedProgrammingSkills/NLP")
+os.chdir("/Users/natachachenevoy/Documents/AdvancedProgrammingSkills/NLP")
+
+# open list of places found on google API
+places = pd.read_csv("places.csv", encoding="cp1252")
+
+# defining the tools
+hover = HoverTool(tooltips=[
+    ("name", "@name"),
+    ("address", "@address"),
+    ("(lat, long)", "(@lat, @long)"),
+])
+
+wheel_zoom = WheelZoomTool()
+wheel_zoom = PanTool()
+
+
+bound = 20000000 # meters
+
+#### Figure ####
+# setting the active tools 
+fig = figure(tools=[hover, wheel_zoom], x_range=(-bound, bound), y_range=(-bound, bound))
+fig.axis.visible = False
+fig.add_tile(CARTODBPOSITRON)
+fig.title.text = "Map of places in poem"
+
+longitude  = places.lng
+latitude = places.lat
+
+
+inProj = Proj(init='epsg:4326')
+outProj = Proj(init='epsg:3857')
+
+list_lng,list_lat  = [],[]
+for index, place in places.iterrows():
+    
+    longitude , latitude = place.lng, place.lat
+    longitude2,latitude2 = transform(inProj,outProj,longitude,latitude)
+    
+    list_lng.append(longitude2)
+    list_lat.append(latitude2)
+
+    
+d = {'name': places.name, 'address': places.address, 'X': list_lng, 'Y': list_lat, 'lat': places.lat, 'long': places.lng}
+source = ColumnDataSource(d)
+
+circle = fig.circle(x='X', y='Y', alpha=0.9, source=source)
+
+output_notebook()
+show(fig)
+```
+
+
+
+    <div class="bk-root">
+        <a href="http://bokeh.pydata.org" target="_blank" class="bk-logo bk-logo-small bk-logo-notebook"></a>
+        <span id="3fc7e749-4fc2-4cd0-b354-19ba14362927">Loading BokehJS ...</span>
+    </div>
+
+
+
+
+
+
+
+    <div class="bk-root">
+        <div class="bk-plotdiv" id="130d0816-5e8a-491c-99f5-48ae9f46b155"></div>
+    </div>
+<script type="text/javascript">
+  
+  (function(global) {
+    function now() {
+      return new Date();
+    }
+  
+    var force = false;
+  
+    if (typeof (window._bokeh_onload_callbacks) === "undefined" || force === true) {
+      window._bokeh_onload_callbacks = [];
+      window._bokeh_is_loading = undefined;
+    }
+  
+  
+    
+    if (typeof (window._bokeh_timeout) === "undefined" || force === true) {
+      window._bokeh_timeout = Date.now() + 0;
+      window._bokeh_failed_load = false;
+    }
+  
+    var NB_LOAD_WARNING = {'data': {'text/html':
+       "<div style='background-color: #fdd'>\n"+
+       "<p>\n"+
+       "BokehJS does not appear to have successfully loaded. If loading BokehJS from CDN, this \n"+
+       "may be due to a slow or bad network connection. Possible fixes:\n"+
+       "</p>\n"+
+       "<ul>\n"+
+       "<li>re-rerun `output_notebook()` to attempt to load from CDN again, or</li>\n"+
+       "<li>use INLINE resources instead, as so:</li>\n"+
+       "</ul>\n"+
+       "<code>\n"+
+       "from bokeh.resources import INLINE\n"+
+       "output_notebook(resources=INLINE)\n"+
+       "</code>\n"+
+       "</div>"}};
+  
+    function display_loaded() {
+      if (window.Bokeh !== undefined) {
+        var el = document.getElementById("130d0816-5e8a-491c-99f5-48ae9f46b155");
+        el.textContent = "BokehJS " + Bokeh.version + " successfully loaded.";
+      } else if (Date.now() < window._bokeh_timeout) {
+        setTimeout(display_loaded, 100)
+      }
+    }
+  
+    function run_callbacks() {
+      window._bokeh_onload_callbacks.forEach(function(callback) { callback() });
+      delete window._bokeh_onload_callbacks
+      console.info("Bokeh: all callbacks have finished");
+    }
+  
+    function load_libs(js_urls, callback) {
+      window._bokeh_onload_callbacks.push(callback);
+      if (window._bokeh_is_loading > 0) {
+        console.log("Bokeh: BokehJS is being loaded, scheduling callback at", now());
+        return null;
+      }
+      if (js_urls == null || js_urls.length === 0) {
+        run_callbacks();
+        return null;
+      }
+      console.log("Bokeh: BokehJS not loaded, scheduling load and callback at", now());
+      window._bokeh_is_loading = js_urls.length;
+      for (var i = 0; i < js_urls.length; i++) {
+        var url = js_urls[i];
+        var s = document.createElement('script');
+        s.src = url;
+        s.async = false;
+        s.onreadystatechange = s.onload = function() {
+          window._bokeh_is_loading--;
+          if (window._bokeh_is_loading === 0) {
+            console.log("Bokeh: all BokehJS libraries loaded");
+            run_callbacks()
+          }
+        };
+        s.onerror = function() {
+          console.warn("failed to load library " + url);
+        };
+        console.log("Bokeh: injecting script tag for BokehJS library: ", url);
+        document.getElementsByTagName("head")[0].appendChild(s);
+      }
+    };var element = document.getElementById("130d0816-5e8a-491c-99f5-48ae9f46b155");
+    if (element == null) {
+      console.log("Bokeh: ERROR: autoload.js configured with elementid '130d0816-5e8a-491c-99f5-48ae9f46b155' but no matching script tag was found. ")
+      return false;
+    }
+  
+    var js_urls = [];
+  
+    var inline_js = [
+      function(Bokeh) {
+        (function() {
+          var fn = function() {
+            var docs_json = {"936072d6-692d-4042-bebc-d548fcf56307":{"roots":{"references":[{"attributes":{"attribution":"&copy; <a href=\"http://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors,&copy; <a href=\"https://cartodb.com/attributions\">CartoDB</a>","url":"http://tiles.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"},"id":"9ae1f117-3631-42be-8a3c-5531bc3959ca","type":"WMTSTileSource"},{"attributes":{"below":[{"id":"4b0818b8-36b7-47f2-ab98-84d76d22691c","type":"LinearAxis"}],"left":[{"id":"42b495c6-af9e-42ce-b68a-719ebba289c2","type":"LinearAxis"}],"renderers":[{"id":"4b0818b8-36b7-47f2-ab98-84d76d22691c","type":"LinearAxis"},{"id":"2aefbc37-73d0-4020-9804-61d3f416f1b0","type":"Grid"},{"id":"42b495c6-af9e-42ce-b68a-719ebba289c2","type":"LinearAxis"},{"id":"06c4a7a7-bb85-41f6-8c0c-1f0532aad1e9","type":"Grid"},{"id":"42c42aa4-0376-444f-9b50-14ddbabe0fb2","type":"TileRenderer"},{"id":"10fddf31-0511-4c63-b1c7-b92c2e3b9242","type":"GlyphRenderer"}],"title":{"id":"74e9fc09-a80a-4096-b163-84493dc764a3","type":"Title"},"tool_events":{"id":"0d20602e-5a55-4b4f-a839-cb63b56be02d","type":"ToolEvents"},"toolbar":{"id":"fa382979-6374-412f-88cf-00eebc136dc2","type":"Toolbar"},"x_range":{"id":"dedf0af1-8568-488c-85b7-9c5429aa0be7","type":"Range1d"},"y_range":{"id":"0852c05a-2b6d-4046-9bcc-9263d9c263c6","type":"Range1d"}},"id":"88f478e7-2dc0-479e-b203-40e601e8369e","subtype":"Figure","type":"Plot"},{"attributes":{"fill_alpha":{"value":0.9},"fill_color":{"value":"#1f77b4"},"line_alpha":{"value":0.9},"line_color":{"value":"#1f77b4"},"x":{"field":"X"},"y":{"field":"Y"}},"id":"0f24ab96-a2b3-4320-9098-b834951b98a9","type":"Circle"},{"attributes":{"callback":null,"column_names":["name","address","X","Y","lat","long"],"data":{"X":[-10646760.240057861,-10654473.066637214,-10664383.362228733,-9571311.589591105,-686346.3873981753,1259264.9819030466,1289079.703386107,-10625268.309172008,669427.7617567399,2658451.3724941337,-10654200.678975193,-9260227.780888123,-9260227.780888123,-10669936.156540684,-10773924.524156583,-8905869.867105095,-8927184.499437958,-10680083.506987844,-10452894.396874867,-12469588.838154087,-10636582.54391751,949380.1286437073,-10615980.834999535,-10858732.688224137,-10840167.98127234,-10804006.245438311,-9401359.722246844,1039469.790292204,-10751819.178348664,1698192.0456749466,-12462187.583697509,-13097443.144955523,-10434263.465957997,-10619282.170346295,-10592603.708537098,-10669619.78654785,-10487317.25547101,-10487317.25547101,-10780053.541548729,-10687714.691852652,-10606845.846265547,-9243853.474160817,-969111.5640465597,-11175902.522731919,-10651463.366092436,-14221.98890061436,-10780427.730885083,-8069367.04534077,-10684316.486285003,-10678768.489843104,-10655156.145296624,-10592750.861771977,6886705.179533482,-9793.88879999186,-7696984.301872398,1696724.1868693465,-9760243.040497394,-13420032.290573848,-10825344.366183732,-10521363.453438103,-10654710.288472096,-12838037.183463506,-8185429.803977,-11755084.263483392,-8236576.16741112,-8456083.28644369,-10638818.785508312,-9391548.879488405,-9391548.879488405,-9115868.720887152,-10654200.678975193,-10804006.245438311,-10804006.245438311,-10666056.126821036,-12616497.615431929,-10638818.785508312,-10613561.817936799,-9754643.358415918,-10613561.817936799,-9754643.358415918,-10825344.366183732,-9754643.358415918,-10679664.277785515,-10627776.504278816,-9754643.358415918,-10627776.504278816,-10668701.834894821,-9754643.358415918,-10378535.181150878,-10677061.004701622,-10378535.181150878,-10685614.850033924,-10378535.181150878,-9142089.080727832,-10378535.181150878,-10656315.71590442,-10378535.181150878,-10378535.181150878,-10647713.524517268,-10834814.87186297,-10964893.255327782,-67906.98219032274,-10592374.279066574,-8242089.075949521,-8239214.472738765,-67906.98219032274,-10964893.255327782,-67906.98219032274,-10026841.610324396,-10646520.023728676,-8979356.78329923,-10651068.070580628,-10651068.070580628,-13655219.806287862,-9391548.879488405,-10638818.785508312,5467864.932092677,-10651463.366092436,-9106214.382200815,3021525.569010426,-14221.98890061436,-10796612.928061428,-10655156.145296624,-10654209.718117846,3444769.3417941197,-9407835.700227894,-10698162.983411225,-10516815.439981999,-13599260.64485684,-10479286.622877387,-10479286.622877387,-10669933.529400703,-195855.28946270436,-9756300.104133498,-10487317.25547101,-10735713.663663827,2596018.4928677226,-8530376.523105485,-10479286.622877387,-10669420.491263483,-8214805.303277189,16117409.517518153,-10655156.145296624,-10651463.366092436,-10725910.40176271,-67906.98219032274,-10655156.145296624,-10778504.430646798,-10995468.834398463,-10675801.881073209,-10805970.845207676,-10625660.253967142,-9143176.393854158,-10667330.71272672,-852.58484803738,-10405121.002879836,-11040559.239422245,14985648.132653715,-8261097.4022040805,-126877.41377094769,-9410916.255628565,-10625660.253967142,-10864624.17208683,-10646520.023728676,14985648.132653715,-10508987.731688146,-10916.31209371124,-8620141.44353544,-31713.89878768702,-8620141.44353544,-10654200.678975193,-9883.400802538321,-8928539.613863286,-10652178.938911203,-13162826.792588294,-10672898.31253095,-10599133.821186522,-10528381.379228134,-10599133.821186522,-10528381.379228134,-12462187.583697509,-10979015.134610325,-10682600.941612389,-8181424.506434364,-10588548.550994532,-10542483.710808095,-10835568.25991276,-10623420.784111107,-11745915.333436662,-10672334.791004656,-10571862.315922074,-9394589.794018405,-10659063.426027618,3919972.2661420065,2641337.5369936405,3330538.757261008,1822725.1822892802,-14221.98890061436,5467864.932092677,-13173187.253068624,-13089240.167526253,-10646329.121933915,-12454840.886923369,9243076.686754057,-9112823.46489701,-10685325.708788536,-8205110.867310273,-10654200.678975193,-10487317.25547101,-10487317.25547101,-13420032.290573848,-13420032.290573848,-10698162.983411225,-10536509.427508147,-10479460.247887176,-8983651.767552763,-9051931.247023178,-10676675.861527374,-10850807.508584142,-14221.98890061436,-10780427.730885083,-10654710.288472096,-9054179.243952205,-10651508.628597392,-10810436.4154489,-33348.92607261346,-10542094.9274865,-8205110.867310273,-944911.3746650483],"Y":[4444741.698893029,4494867.450355018,4311306.930818677,5444017.688365128,7036799.122050783,6091928.395446182,6130640.92825197,4534589.444909924,5810538.189604754,7394820.260241124,4470408.625577034,5182857.601519847,5182857.601519847,4311351.446587395,3870421.062739094,4918170.845280018,2970678.5262701917,4324711.031157449,4442036.6910325,5042455.986146361,3466010.3578061485,6804080.7249088995,3471882.906783408,4213201.974757976,4541324.085795428,4402486.338611159,4015233.838893656,6886180.794625116,4746845.156538523,7270403.1438861005,3962891.3512338405,6091055.663222689,4356129.00736501,4568426.18845233,4388713.30187249,4313003.066860819,4349936.36962523,4349936.36962523,3601284.774948149,4351410.256654718,4487104.112988551,4874721.045281392,4843631.8992369,4079388.2633253825,4499508.88231059,6711533.693992157,4467166.242589297,5565006.659162203,4404094.358931281,4403546.77155896,4470158.972860751,4390929.264342614,4524371.509523216,6712504.359027909,5604524.908527868,4610651.851765982,5163928.7676691655,5435181.238621726,4542797.751994287,4447144.303419837,4451692.554810531,4334365.158234274,5713513.166241259,4363992.48332504,4968614.760970809,5466596.321160659,4488672.05978632,4795138.266480519,4795138.266480519,5076011.023885671,4470408.625577034,4402486.338611159,4402486.338611159,4513758.821108391,4093439.995912135,4488672.05978632,4525325.536043714,5144612.704551059,4525325.536043714,5144612.704551059,4542797.751994287,5144612.704551059,4398361.950536383,4499042.137495549,5144612.704551059,4499042.137495549,4340796.667470818,5144612.704551059,4502313.447192089,4400745.591324347,4502313.447192089,4321549.899313755,4502313.447192089,4779748.307183453,4502313.447192089,4639986.783369713,4502313.447192089,4502313.447192089,4294033.451122649,4534574.085006703,3428119.4223221983,6723549.43581794,4340969.196658637,4971279.165194656,4969060.312477088,6723549.43581794,3428119.4223221983,6723549.43581794,3495025.995764068,4444853.756615338,5013207.570319912,4497488.900799608,4497488.900799608,4618578.326274158,4795138.266480519,4488672.05978632,7516731.05991793,4499508.88231059,3024147.0005850173,4639459.36935667,6711533.693992157,3884598.858516645,4470158.972860751,4470499.719954121,3591709.0738173206,4736455.131575549,4304356.437078662,4451897.839123685,6066386.196192393,4346538.144354912,4346538.144354912,4320961.964205786,7131612.398344218,5145118.995309483,4349936.36962523,4763935.864106016,4625096.166948543,4768245.915975375,4346538.144354912,4307087.674603489,4972337.02156714,-4505006.201914886,4470158.972860751,4499508.88231059,4317284.438340867,6723549.43581794,4470158.972860751,3888539.2274610144,4630327.696313574,4400449.353529298,3923636.916646393,4531469.598116792,3573371.0466756285,4513827.241811584,6707103.986357512,5802493.2299010595,4553003.008471087,-3805541.499134627,4962906.120267706,6916110.576139366,4042798.224405339,4531469.598116792,4220146.7787552485,4444853.756615338,-3805541.499134627,4215283.962302442,6719146.65006949,4514747.230654147,6705794.611529343,4514747.230654147,4470408.625577034,6713272.777605144,3029398.2290150966,4498925.044508947,4035817.961316882,4310510.59501185,4443844.833565326,4734779.06284122,4443844.833565326,4734779.06284122,3962891.3512338405,3424881.7661182643,4309248.3727767905,5034022.661452895,4391976.851146849,4510221.192769384,4540323.067662814,4551407.425300698,4631917.487300599,4312880.988426378,4289276.941078729,3995520.3757341006,3474850.7053084825,3732937.169451003,4577138.904755053,3658762.3054826064,6141557.761407198,6711533.693992157,7516731.05991793,4042429.1370050404,6023125.628694693,4443784.480012268,3973039.576159272,3173992.3908901713,4450875.936701835,4405085.939310857,4963394.148727222,4470408.625577034,4349936.36962523,4349936.36962523,5435181.238621726,5435181.238621726,4304356.437078662,4725067.507516783,4317617.144900651,4192925.3635163396,4869628.820786941,4327370.77196859,4193594.096704649,6711533.693992157,4467166.242589297,4451692.554810531,3308428.5774281076,4499454.699875624,3862135.394252797,5574450.425834562,4706498.906596464,4963394.148727222,6780090.449868389],"address":["1601 W 4th St, Coffeyville, KS 67337, USA","US-75, Neodesha, KS 66757, USA","800 W Boise Cir #280, Broken Arrow, OK 74012, USA","Winter, Baldwin, MI 49304, USA","Summer, Stradbrook Rd, Mountashton, Blackrock, Co. Dublin, Ireland","Lake Starnberg, Germany","Hofgarten, Hofgartenstra\u00dfe 1, 80538 M\u00fcnchen, Germany","314 E Main St, Chanute, KS 66720, USA","1281 Russin, Switzerland","Lithuania","Independence, KS 67301, USA","Marie, Trenton, MI 48183, USA","Marie, Trenton, MI 48183, USA","5835 S Garnett Rd, Tulsa, OK 74146, USA","2513 N Fitzhugh Ave, Dallas, TX 75204, USA","5301 Grove Rd, Pittsburgh, PA 15236, USA","Wind, 350 S Miami Ave, Miami, FL 33130, USA","1402 N Harvard Ave, Tulsa, OK 74115, USA","200 W 3rd St, Freistatt, MO 65654, USA","3350 S 1500 W, Ogden, UT 84401, USA","9630 Clarewood Dr A13, Houston, TX 77036, USA","Mauerstra\u00dfe 38, 33602 Bielefeld, Germany","1303 San Jacinto St, Houston, TX 77002, USA","10600 S Pennsylvania Ave #17, Oklahoma City, OK 73170, USA","2555 N Hyacinth Ln, Wichita, KS 67204, USA","2116 Berkshire Dr, Ponca City, OK 74604, USA","2030 Powers Ferry Rd # 230, Atlanta, GA 30339, USA","Steinhuder Meer, 31515 Wunstorf, Germany","1802 Rockhill Rd, Manhattan, KS 66502, USA","Europe","6000 E Camelback Rd, Scottsdale, AZ 85251, USA","Sailor, Nine Mile Falls, WA 99026, USA","12 Echols St, Eureka Springs, AR 72632, USA","Iola, KS 66749, USA","136 S Wilson St, Vinita, OK 74301, USA","11664 E 51st St, Tulsa, OK 74146, USA","1335 S Main St, Bentonville, AR 72712, USA","1335 S Main St, Bentonville, AR 72712, USA","Gause, TX 77857, USA","603 W Rogers Blvd, Skiatook, OK 74070, USA","Parsons, KS 67357, USA","750 Communications Pkwy Suite G, Columbus, OH 43214, USA","Rua do Arieiro, 3105-218 Meirinhas, Portugal","Tell, TX 79201, USA","1407 N 8th St, Neodesha, KS 66757, USA","London, UK","Andes Bridge, 18216 192nd Rd, Winfield, KS 67156, USA","Sighs Dr, Wolcott, VT 05680, USA","117 W 5th St #500, Bartlesville, OK 74003, USA","4150 SE Adams Rd, Bartlesville, OK 74006, USA","812 W Maple St, Independence, KS 67301, USA","735 N Foreman St, Vinita, OK 74301, USA","Mary, Turkmenistan","1 King William St, London EC3V 9AN, UK","Stetson, ME 04488, USA","98057 Milazzo, Province of Messina, Italy","565 Howard St, Evanston, IL 60202, USA","Oregon, USA","3101 N Rock Rd, Wichita, KS 67226, USA","2922 S Main St, Joplin, MO 64804, USA","Independence, KS 67301, USA","Glowing Cove Ave, Las Vegas, NV 89129, USA","6830 Rue Hochelaga, Montr\u00e9al, QC H1N 1Y4, Canada","15 NM Hwy 522, El Prado, NM 87529, United States","3, 45 Main St, Brooklyn, NY 11201, USA","Philomel Creek, New York 13601, USA","5739 Cr 6200, Cherryvale, KS 67335, USA","3610 Central Ave, Middletown, OH 45044, USA","3610 Central Ave, Middletown, OH 45044, USA","24048 Lorain Rd, North Olmsted, OH 44070, USA","Independence, KS 67301, USA","2116 Berkshire Dr, Ponca City, OK 74604, USA","2116 Berkshire Dr, Ponca City, OK 74604, USA","1525 Madison St # 2, Fredonia, KS 66736, USA","Nothing, AZ 85360, USA","5739 Cr 6200, Cherryvale, KS 67335, USA","Lil' Toledo Lodge, 10600 170th Rd, Chanute, KS 66720, USA","11 E Illinois St Ste 501, Chicago, IL 60611, USA","Lil' Toledo Lodge, 10600 170th Rd, Chanute, KS 66720, USA","11 E Illinois St Ste 501, Chicago, IL 60611, USA","3101 N Rock Rd, Wichita, KS 67226, USA","11 E Illinois St Ste 501, Chicago, IL 60611, USA","3650 Camelot Dr, Bartlesville, OK 74006, USA","4230 Douglas Rd, Thayer, KS 66776, USA","11 E Illinois St Ste 501, Chicago, IL 60611, USA","4230 Douglas Rd, Thayer, KS 66776, USA","12150 E 96th St N, Owasso, OK 74055, USA","11 E Illinois St Ste 501, Chicago, IL 60611, USA","Goodnight, MO, USA","1801 East Dr, Bartlesville, OK 74006, USA","Goodnight, MO, USA","412 S Main St, Tulsa, OK 74103, USA","Goodnight, MO, USA","May, Millfield, OH 45761, USA","Goodnight, MO, USA","2775 US-75, Lebo, KS 66856, USA","Goodnight, MO, USA","Goodnight, MO, USA","111 E Chestnut St, Coweta, OK 74429, USA","416 S Commerce #106, Wichita, KS 67202, USA","Sweet, San Antonio, TX 78204, USA","River Thames, United Kingdom","Salina, OK 74365, USA","150 Bay St #2a, Jersey City, NJ 07302, USA","1 Morris St, New York, NY 10004, USA","River Thames, United Kingdom","Sweet, San Antonio, TX 78204, USA","River Thames, United Kingdom","1532 Magazine St Suite A, New Orleans, LA 70130, USA","1400 W 4th St, Coffeyville, KS 67337, USA","Boardman, OH 44512, USA","506 Main St, Neodesha, KS 66757, USA","506 Main St, Neodesha, KS 66757, USA","1351B Redwood Way, Petaluma, CA 94954, USA","3610 Central Ave, Middletown, OH 45044, USA","5739 Cr 6200, Cherryvale, KS 67335, USA","Profsoyuznaya Ulitsa, 34, Kazan, Respublika Tatarstan, Russia, 420111","1407 N 8th St, Neodesha, KS 66757, USA","798 Neapolitan Way, Naples, FL 34103, USA","Izmir, ?zmir, Turkey","London, UK","3200 Regent Blvd, Irving, TX 75063, USA","812 W Maple St, Independence, KS 67301, USA","201 N 8th St, Independence, KS 67301, USA","Al Batal Ahamed Abd Al Asas, Madinet Tala, Tala, Menofia Governorate, Egypt","609 Walnut St, Cincinnati, OH 45202, USA","2240 Industrial Rd, Sapulpa, OK 74066, USA","101 N Rangeline Rd, Joplin, MO 64801, USA","13132 NE 177th Pl, Woodinville, WA 98072, USA","1400 W Walnut St #124, Rogers, AR 72756, USA","1400 W Walnut St #124, Rogers, AR 72756, USA","11344 E 11th St, Tulsa, OK 74128, USA","Bradford, UK","520 W Erie St #440, Chicago, IL 60654, USA","1335 S Main St, Bentonville, AR 72712, USA","Flush, Pottawatomie, KS 66535, USA","Thiva 322 00, Greece","3000 Chestnut Ave #336, Baltimore, MD 21211, USA","1400 W Walnut St #124, Rogers, AR 72756, USA","4416 W Houston St, Broken Arrow, OK 74012, USA","Queens, NY, USA","Victoria, Australia","812 W Maple St, Independence, KS 67301, USA","1407 N 8th St, Neodesha, KS 66757, USA","219 Evans Rd, Mannford, OK 74044, USA","River Thames, United Kingdom","812 W Maple St, Independence, KS 67301, USA","14800 Quorum Dr #140, Dallas, TX 75254, USA","800 Washington St, Great Bend, KS 67530, USA","1815 SE Bison, Bartlesville, OK 74006, USA","Oil, Denton, TX 76208, USA","2110 S Santa Fe Ave, Chanute, KS 66720, USA","Wide, St George, GA 31562, USA","414 N 7th St, Fredonia, KS 66736, USA","Greenwich, London SE10 9NN, UK","Isle, MN, USA","Dogs, Lewis, KS 67552, USA","Wallala SA 5661, Australia","Elizabeth, NJ, USA","Leicester, UK","1246 Towne Lake Pkwy, Woodstock, GA 30189, USA","2110 S Santa Fe Ave, Chanute, KS 66720, USA","5300 S Meridian Ave, Oklahoma City, OK 73119, USA","1400 W 4th St, Coffeyville, KS 67337, USA","Wallala SA 5661, Australia","211 N Greenwood Ave, Fort Smith, AR 72901, USA","Highbury, London N5 2DQ, UK","Richmond, VA, USA","Kew, Richmond TW9, UK","Richmond, VA, USA","Independence, KS 67301, USA","Moorgate, London, UK","Margate, FL, USA","1250 Tank Ave, Neodesha, KS 66757, USA","Los Angeles, CA, USA","Burning Tree, Tulsa, OK 74133, USA","3003 Rooks Rd, Bartlett, KS 67332, USA","419 E 18th St, Kansas City, MO 64108, USA","3003 Rooks Rd, Bartlett, KS 67332, USA","419 E 18th St, Kansas City, MO 64108, USA","6000 E Camelback Rd, Scottsdale, AZ 85251, USA","Gentile, Lackland AFB, TX 78236, USA","2021 E 71st St, Tulsa, OK 74136, USA","145 Elm St, New Canaan, CT 06840, USA","442586 East 250 Road, Vinita, OK 74301, USA","130-146 US-69, Franklin, KS 66735, USA","118 E 21st St N, Wichita, KS 67214, USA","901 S 12th St, Humboldt, KS 66748, USA","45 Log Ln DEAD, Cotopaxi, CO 81223, USA","5124 S 95th E Ave, Tulsa, OK 74145, USA","500 N Muskogee Ave unit a, Tahlequah, OK 74464, USA","100 Broad St SW, Atlanta, GA 30303, USA","510 Mason Rd, Katy, TX 77450, USA","Jerusalem, Israel","Athens, Greece","Alexandria, Alexandria Governorate, Egypt","Vienna, Austria","London, UK","Profsoyuznaya Ulitsa, 34, Kazan, Respublika Tatarstan, Russia, 420111","6714 Hollywood Blvd, Los Angeles, CA 90028, USA","Dryden Hall, 106 N 9th St, Cheney, WA 99004, USA","1316 W 11th St, Coffeyville, KS 67337, USA","9160 E Shea Blvd Suite 106, Scottsdale, AZ 85260, USA","Ganges","Waited St, Raven, VA 24639, USA","202 N Kaw Ave, Bartlesville, OK 74003, USA","1 S Central Ave, Valley Stream, NY 11580, USA","Independence, KS 67301, USA","1335 S Main St, Bentonville, AR 72712, USA","1335 S Main St, Bentonville, AR 72712, USA","Oregon, USA","Oregon, USA","2240 Industrial Rd, Sapulpa, OK 74066, USA","5809 Reeds, Lower Level, Mission, KS 66202, United States","1444 E Stearns St, Fayetteville, AR 72703, USA","Coriolanus Ct, Charlotte, NC 28227, USA","Gaily Ln, Quaker City, OH 43773, USA","6101 E Apache St, Tulsa, OK 74115, USA","2260 W Main St, Norman, OK 73069, USA","London, UK","Andes Bridge, 18216 192nd Rd, Winfield, KS 67156, USA","5000 Estate Enighed, Independence, KS 67301, USA","Quando Dr, Belle Isle, FL 32812, USA","1321 N 8th St, Neodesha, KS 66757, USA","502 W Randol Mill Rd, Arlington, TX 76011, USA","Aquitaine, France","9903 W 129th St, Shawnee Mission, KS 66213, USA","1 S Central Ave, Valley Stream, NY 11580, USA","Shantih, 14 Hartland's Rd, The Lough, Cork, T12 V0FV, Ireland"],"lat":{"__ndarray__":"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","dtype":"float64","shape":[229]},"long":{"__ndarray__":"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","dtype":"float64","shape":[229]},"name":["April","Lilacs","Dull","Winter","Summer","Starnbergersee","Hofgarten","Bin","Russin","Litauen","My","Marie","Marie","Son","Come","Frisch","Wind","Der","Heimat","zu","Mein","Irisch","Kind","Wo","Hyacinth","Speak","Oed","Meer","Madame","Europe","Phoenician","Sailor","Belladonna","Lady","Rocks","Wheel","Which","Which","Hanged","Man","Fear","Thank","Equitone","Tell","City","London","Bridge","Sighs","King","William","Street","Saint","Mary","Woolnoth","Stetson","Mylae","Has","Or","Oh","Dog","Chair","Glowed","Cupidon","Flung","Huge","Philomel","So","Jug","Jug","Footsteps","My","Speak","Speak","Do","Nothing","So","Lil","Albert","Lil","Albert","Oh","Albert","George","Well","Albert","Well","Sunday","Albert","Goonight","Bill","Goonight","Lou","Goonight","May","Goonight","Ta","Goonight","Goonight","Good","Clutch","Sweet","Thames","Silk","Departed","Leman","Thames","Sweet","Thames","Musing","White","Sweeney","Porter","Porter","Twit","Jug","So","Unreal","City","Eugenides","Smyrna","London","Cannon","Street","Hotel","Followed","Metropole","Turn","Old","Homeward","Her","Her","Stockings","Bradford","Endeavours","Which","Flushed","Thebes","Hardly","Her","Strand","Queen","Victoria","Street","City","Lower","Thames","Street","Where","Magnus","Martyr","Oil","Red","Wide","Down","Greenwich","Isle","Dogs","Wallala","Elizabeth","Leicester","Beating","Red","Southwest","White","Wallala","Trams","Highbury","Richmond","Kew","Richmond","My","Moorgate","Margate","Sands","la","Burning","Lord","Thou","Lord","Thou","Phoenician","Gentile","Jew","Consider","Prison","Rock","Amongst","Sweat","Dead","From","Drip","Murmur","Cracks","Jerusalem","Athens","Alexandria","Vienna","London","Unreal","Whistled","Dry","Co","Bringing","Ganga","Waited","Gathered","Datta","My","Which","Which","Or","Or","Turn","Thinking","Revive","Coriolanus","Gaily","Fishing","Shall","London","Bridge","Poi","Quando","Le","Prince","Aquitaine","Ile","Datta","Shantih"]}},"id":"ce404c59-0d30-4a6b-8be1-1495a832af15","type":"ColumnDataSource"},{"attributes":{"fill_alpha":{"value":0.1},"fill_color":{"value":"#1f77b4"},"line_alpha":{"value":0.1},"line_color":{"value":"#1f77b4"},"x":{"field":"X"},"y":{"field":"Y"}},"id":"3c831da7-28b7-42d7-a962-541209ae1b45","type":"Circle"},{"attributes":{"data_source":{"id":"ce404c59-0d30-4a6b-8be1-1495a832af15","type":"ColumnDataSource"},"glyph":{"id":"0f24ab96-a2b3-4320-9098-b834951b98a9","type":"Circle"},"hover_glyph":null,"muted_glyph":null,"nonselection_glyph":{"id":"3c831da7-28b7-42d7-a962-541209ae1b45","type":"Circle"},"selection_glyph":null},"id":"10fddf31-0511-4c63-b1c7-b92c2e3b9242","type":"GlyphRenderer"},{"attributes":{},"id":"e2379797-6be2-4437-b61f-952e16ec938f","type":"BasicTickFormatter"},{"attributes":{"plot":null,"text":"Map of places in poem"},"id":"74e9fc09-a80a-4096-b163-84493dc764a3","type":"Title"},{"attributes":{},"id":"0d20602e-5a55-4b4f-a839-cb63b56be02d","type":"ToolEvents"},{"attributes":{"plot":{"id":"88f478e7-2dc0-479e-b203-40e601e8369e","subtype":"Figure","type":"Plot"}},"id":"9a5e8a66-542f-4cd6-b7fd-f2a2f856402e","type":"PanTool"},{"attributes":{"callback":null,"plot":{"id":"88f478e7-2dc0-479e-b203-40e601e8369e","subtype":"Figure","type":"Plot"},"tooltips":[["name","@name"],["address","@address"],["(lat, long)","(@lat, @long)"]]},"id":"91e7f9f9-c4bc-4673-88ca-f247e04aa6fe","type":"HoverTool"},{"attributes":{},"id":"053eafb5-0ff2-4074-a791-5654ae812f2b","type":"BasicTickFormatter"},{"attributes":{"callback":null,"end":20000000,"start":-20000000},"id":"dedf0af1-8568-488c-85b7-9c5429aa0be7","type":"Range1d"},{"attributes":{"active_drag":"auto","active_scroll":"auto","active_tap":"auto","tools":[{"id":"91e7f9f9-c4bc-4673-88ca-f247e04aa6fe","type":"HoverTool"},{"id":"9a5e8a66-542f-4cd6-b7fd-f2a2f856402e","type":"PanTool"}]},"id":"fa382979-6374-412f-88cf-00eebc136dc2","type":"Toolbar"},{"attributes":{"callback":null,"end":20000000,"start":-20000000},"id":"0852c05a-2b6d-4046-9bcc-9263d9c263c6","type":"Range1d"},{"attributes":{"formatter":{"id":"053eafb5-0ff2-4074-a791-5654ae812f2b","type":"BasicTickFormatter"},"plot":{"id":"88f478e7-2dc0-479e-b203-40e601e8369e","subtype":"Figure","type":"Plot"},"ticker":{"id":"7fd127b2-b18a-4d49-93b1-84fcac06c101","type":"BasicTicker"},"visible":false},"id":"4b0818b8-36b7-47f2-ab98-84d76d22691c","type":"LinearAxis"},{"attributes":{},"id":"7fd127b2-b18a-4d49-93b1-84fcac06c101","type":"BasicTicker"},{"attributes":{"plot":{"id":"88f478e7-2dc0-479e-b203-40e601e8369e","subtype":"Figure","type":"Plot"},"ticker":{"id":"7fd127b2-b18a-4d49-93b1-84fcac06c101","type":"BasicTicker"}},"id":"2aefbc37-73d0-4020-9804-61d3f416f1b0","type":"Grid"},{"attributes":{"formatter":{"id":"e2379797-6be2-4437-b61f-952e16ec938f","type":"BasicTickFormatter"},"plot":{"id":"88f478e7-2dc0-479e-b203-40e601e8369e","subtype":"Figure","type":"Plot"},"ticker":{"id":"257aa987-4e05-4ed8-81a9-be67d4d3d2fc","type":"BasicTicker"},"visible":false},"id":"42b495c6-af9e-42ce-b68a-719ebba289c2","type":"LinearAxis"},{"attributes":{},"id":"257aa987-4e05-4ed8-81a9-be67d4d3d2fc","type":"BasicTicker"},{"attributes":{"dimension":1,"plot":{"id":"88f478e7-2dc0-479e-b203-40e601e8369e","subtype":"Figure","type":"Plot"},"ticker":{"id":"257aa987-4e05-4ed8-81a9-be67d4d3d2fc","type":"BasicTicker"}},"id":"06c4a7a7-bb85-41f6-8c0c-1f0532aad1e9","type":"Grid"},{"attributes":{"tile_source":{"id":"9ae1f117-3631-42be-8a3c-5531bc3959ca","type":"WMTSTileSource"}},"id":"42c42aa4-0376-444f-9b50-14ddbabe0fb2","type":"TileRenderer"}],"root_ids":["88f478e7-2dc0-479e-b203-40e601e8369e"]},"title":"Bokeh Application","version":"0.12.5"}};
+            var render_items = [{"docid":"936072d6-692d-4042-bebc-d548fcf56307","elementid":"130d0816-5e8a-491c-99f5-48ae9f46b155","modelid":"88f478e7-2dc0-479e-b203-40e601e8369e"}];
+            
+            Bokeh.embed.embed_items(docs_json, render_items);
+          };
+          if (document.readyState != "loading") fn();
+          else document.addEventListener("DOMContentLoaded", fn);
+        })();
+      },
+      function(Bokeh) {
+      }
+    ];
+  
+    function run_inline_js() {
+      
+      if ((window.Bokeh !== undefined) || (force === true)) {
+        for (var i = 0; i < inline_js.length; i++) {
+          inline_js[i](window.Bokeh);
+        }if (force === true) {
+          display_loaded();
+        }} else if (Date.now() < window._bokeh_timeout) {
+        setTimeout(run_inline_js, 100);
+      } else if (!window._bokeh_failed_load) {
+        console.log("Bokeh: BokehJS failed to load within specified timeout.");
+        window._bokeh_failed_load = true;
+      } else if (force !== true) {
+        var cell = $(document.getElementById("130d0816-5e8a-491c-99f5-48ae9f46b155")).parents('.cell').data().cell;
+        cell.output_area.append_execute_result(NB_LOAD_WARNING)
+      }
+  
+    }
+  
+    if (window._bokeh_is_loading === 0) {
+      console.log("Bokeh: BokehJS loaded, going straight to plotting");
+      run_inline_js();
+    } else {
+      load_libs(js_urls, function() {
+        console.log("Bokeh: BokehJS plotting callback run at", now());
+        run_inline_js();
+      });
+    }
+  }(this));
+</script>
+
