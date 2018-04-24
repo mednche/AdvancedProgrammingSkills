@@ -1,4 +1,7 @@
-# Mapping the places mentionned in a text - an applicattion of Natural Language Processing
+# Mapping places mentionned in a poem - an application of Natural Language Processing
 
+<p align="center">
+  <img src="MapOfPlaces.png">
+</p>
 
 
