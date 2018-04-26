@@ -6,7 +6,7 @@ Created on Tue Mar 13 14:52:27 2018
 
 This script has two parts:
     - part 1: validate the schema of an XML file
-    - part 2: Edit an XML file and tranform it into an HTML file
+    - part 2: edit an XML file and tranform it into an HTML file
 """
 
 import os
