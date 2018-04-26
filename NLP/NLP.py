@@ -104,6 +104,7 @@ for noun in proper_nouns:
         geodata['lat'] = result['geometry']['location']['lat']
         geodata['lng'] = result['geometry']['location']['lng']
         geodata['address'] = result['formatted_address']
+        geodata['name'] = noun
     
         print('{address}. (lat, lng) = ({lat}, {lng})'.format(**geodata))
         # 221B Baker Street, London, Greater London NW1 6XE, UK. (lat, lng) = (51.5237038, -0.1585531)
@@ -111,5 +112,7 @@ for noun in proper_nouns:
         # Wait for 5 seconds
         time.sleep(5)
 
-
+import os
+os.chdir("//ds.leeds.ac.uk/staff/staff19/mednche/GitHub/AdvancedProgrammingSkills/NLP")
+df.to_csv("places.csv")
     
