@@ -5,6 +5,9 @@ Created on Tue Mar 13 12:19:48 2018
 @author: mednche
 
 This is a simple script that creates an SQLITE database with a single row
+
+- Optionnal input: database 'resultsdb.sqlite'
+- Output: write in 'resultsdb.sqlite' to insert a row.
 """
 
 import sqlite3
