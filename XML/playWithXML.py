@@ -7,6 +7,16 @@ Created on Tue Mar 13 14:52:27 2018
 This script has two parts:
     - part 1: validate the schema of an XML file
     - part 2: edit an XML file and tranform it into an HTML file
+    
+Necessary inputs: 
+    - XML maps: 'map1.xml' and 'map2.xml'
+    - Schema Definition doc: 'map2.xsd'
+    - Document Type Definiton doc: 'map1.dtd'
+    - Style sheet: 'map3.xsl'
+    
+Outputs:
+    - Return True if the XML document follows a valid schema, and False otherwise
+    - Write an HTML file with the XML map inputed 
 """
 
 import os
