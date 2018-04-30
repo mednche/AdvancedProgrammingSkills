@@ -7,8 +7,9 @@ Created on Wed Mar 14 15:00:15 2018
 This script:
 - Extracts the raw text from The Waste Land by T. S. Eliot from an html format
 - Performs Part of Speech tagging to extract proper nouns
-- Querries the names in google maps to get the corresponding lat/lon 
+- Querries the names in google maps to get the corresponding coordinates 
 (providing the proper noun corresponds to a place name)
+- Writes an output csv file with the place names, coordinates and address in Google.
 
 """
 
@@ -74,8 +75,6 @@ for tag in tagged:
 ##            Querry google maps for lat/lon of places in poem             ##
 #############################################################################
 
-import time
-
 # Replace the value below with your personal API key:
 mykey = ""
 
@@ -107,7 +106,6 @@ for noun in proper_nouns:
         geodata['name'] = noun
     
         print('{address}. (lat, lng) = ({lat}, {lng})'.format(**geodata))
-        # 221B Baker Street, London, Greater London NW1 6XE, UK. (lat, lng) = (51.5237038, -0.1585531)
         df = df.append(geodata, ignore_index = True)
         # Wait for 5 seconds
         time.sleep(5)
